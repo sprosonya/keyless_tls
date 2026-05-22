@@ -1,89 +1,119 @@
-package main
+package util
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"flag"
 	"fmt"
-	"log"
 	"os"
 
 	"golang.org/x/crypto/scrypt"
 )
 
-type encryptedKeyData struct {
+type EncryptedKeyData struct {
 	Nonce string `json:"nonce"`
 	Key   string `json:"key"`
 }
 
-func main() {
-	keyFile := flag.String("key", "web.key", "Путь к приватному ключу в формате PEM")
-	outFile := flag.String("out", "encrypted_key.json", "Имя файла с зашифрованным ключом")
-	flag.Parse()
-
-	if *keyFile == "" {
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	pass := make([]byte, 0)
-	fmt.Print("Введите пароль для зашифрования: ")
-	fmt.Scanln(&pass)
-
-	pemData, err := os.ReadFile(*keyFile)
+func EncryptPrivateKey(keyPath, password, outPath string) error {
+	pemData, err := os.ReadFile(keyPath)
 	if err != nil {
-		log.Fatalf("Error reading key file %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("cannot read key file: %w", err)
 	}
 	block, _ := pem.Decode(pemData)
 	if block == nil {
-		log.Fatalf("PEM decoding error")
-		os.Exit(1)
+		return fmt.Errorf("no PEM block found")
 	}
 
-	//фиксированная соль
-	h := sha256.Sum256([]byte("keyless_tls"))
+	// фиксированная соль
+	//
+	salt := sha256.Sum256([]byte("keyless-tls"))
 
-	// KDF
-	key, err := scrypt.Key(pass, h[:], 1<<15, 8, 1, 32)
+	// KDF: scrypt
+	key, err := scrypt.Key([]byte(password), salt[:], 1<<15, 8, 1, 32)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "scrypt error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("scrypt: %w", err)
 	}
 
-	// генерация случайного nonce
+	// случайный nonce
 	nonce := make([]byte, 12)
 	if _, err := rand.Read(nonce); err != nil {
-		panic(err)
+		return fmt.Errorf("rand: %w", err)
 	}
 
 	// AES-GCM
-	blockCipher, err := aes.NewCipher(key)
+	aesBlock, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("aes: %w", err)
 	}
-	aead, err := cipher.NewGCM(blockCipher)
+	aead, err := cipher.NewGCM(aesBlock)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("gcm: %w", err)
 	}
 	ciphertext := aead.Seal(nil, nonce, block.Bytes, nil)
 
-	ed := encryptedKeyData{
+	// запись в JSON
+	ek := EncryptedKeyData{
 		Nonce: base64.StdEncoding.EncodeToString(nonce),
 		Key:   base64.StdEncoding.EncodeToString(ciphertext),
 	}
-	jsonData, err := json.Marshal(ed)
+	jsonData, err := json.Marshal(ek)
 	if err != nil {
-		log.Fatalf("Failed to marshal: %v\n", err)
+		return fmt.Errorf("json marshal: %w", err)
+	}
+	if err := os.WriteFile(outPath, jsonData, 0600); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	return nil
+}
+
+func LoadEncryptedPrivateKey(path, password string) (*ecdsa.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read encrypted key file: %w", err)
+	}
+	var ek EncryptedKeyData
+	if err := json.Unmarshal(data, &ek); err != nil {
+		return nil, fmt.Errorf("invalid encrypted key format: %w", err)
 	}
 
-	if err := os.WriteFile(*outFile, jsonData, 0600); err != nil {
-		log.Fatalf("Failed to write key: %v\n", err)
-		os.Exit(1)
+	nonce, err := base64.StdEncoding.DecodeString(ek.Nonce)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nonce: %w", err)
 	}
+	ciphertext, err := base64.StdEncoding.DecodeString(ek.Key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cipher: %w", err)
+	}
+
+	// фиксированная соль
+	salt := sha256.Sum256([]byte("keyless-tls"))
+
+	// KDF
+	key, err := scrypt.Key([]byte(password), salt[:], 1<<15, 8, 1, 32)
+	if err != nil {
+		return nil, fmt.Errorf("scrypt: %w", err)
+	}
+
+	aesBlock, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("aes: %w", err)
+	}
+	aead, err := cipher.NewGCM(aesBlock)
+	if err != nil {
+		return nil, fmt.Errorf("gcm: %w", err)
+	}
+
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed: %w", err)
+	}
+
+	return x509.ParseECPrivateKey(plaintext)
 }

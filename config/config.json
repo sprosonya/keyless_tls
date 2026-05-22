@@ -13,7 +13,7 @@
     "server_cert_file": "certs/keyserver.crt",
     "server_key_file": "certs/keyserver.key",
     "ca_cert_file": "certs/ca.crt",
-    "web_private_key_file": "certs/web.key"
+    "web_private_key_file": "certs/encrypted_key.json"
   },
   "httpserver": {
     "listen_addr": "127.0.0.1:8080"

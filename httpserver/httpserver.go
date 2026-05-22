@@ -1,11 +1,11 @@
-package main
+package httpserver
 
 import (
 	"fmt"
 	"net/http"
 )
 
-func startHTTPServer(addr string) error {
+func StartHTTPServer(addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

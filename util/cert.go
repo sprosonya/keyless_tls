@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"crypto/ecdsa"
@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"keyless/config"
 	"math/big"
 	"net"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"time"
 )
 
-func generateCerts(cfg *Config) error {
+func GenerateCerts(cfg *config.Config) error {
 	dir := filepath.Dir(cfg.Proxy.CACertFile)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err

@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"keyless/config"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -55,7 +56,7 @@ func (rs *RemoteSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([
 	return base64.RawStdEncoding.DecodeString(reply.Signature)
 }
 
-func startProxy(cfg Config) error {
+func StartProxy(cfg config.Config) error {
 	// загрузка сертификата бекенда
 	webCertPEM, err := os.ReadFile(cfg.Proxy.WebCertFile)
 	if err != nil {
