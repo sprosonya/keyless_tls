@@ -1,0 +1,21 @@
+{
+  "proxy": {
+    "listen_addr": "127.0.0.1:443",
+    "backend_addr": "127.0.0.1:8080",
+    "keyserver_addr": "127.0.0.1:8443",
+    "web_cert_file": "certs/web.crt",
+    "mtls_cert_file": "certs/proxy.crt",
+    "mtls_key_file": "certs/proxy.key",
+    "ca_cert_file": "certs/ca.crt"
+  },
+  "keyserver": {
+    "listen_addr": "127.0.0.1:8443",
+    "server_cert_file": "certs/keyserver.crt",
+    "server_key_file": "certs/keyserver.key",
+    "ca_cert_file": "certs/ca.crt",
+    "web_private_key_file": "certs/web.key"
+  },
+  "httpserver": {
+    "listen_addr": "127.0.0.1:8080"
+  }
+}
