@@ -6,25 +6,27 @@ import (
 )
 
 type Config struct {
-	Proxy struct {
-		ListenAddr    string `json:"listen_addr"`
-		BackendAddr   string `json:"backend_addr"`
-		KeyServerAddr string `json:"keyserver_addr"`
-		WebCertFile   string `json:"web_cert_file"`
-		MTLSCertFile  string `json:"mtls_cert_file"`
-		MTLSKeyFile   string `json:"mtls_key_file"`
-		CACertFile    string `json:"ca_cert_file"`
-	} `json:"proxy"`
-	KeyServer struct {
-		ListenAddr        string `json:"listen_addr"`
-		ServerCertFile    string `json:"server_cert_file"`
-		ServerKeyFile     string `json:"server_key_file"`
-		CACertFile        string `json:"ca_cert_file"`
-		WebPrivateKeyFile string `json:"web_private_key_file"`
-	} `json:"keyserver"`
-	HTTPServer struct {
-		ListenAddr string `json:"listen_addr"`
-	} `json:"httpserver"`
+	Servers      ServersConfig      `json:"servers"`
+	Certificates CertificatesConfig `json:"certificates"`
+}
+
+type ServersConfig struct {
+	ProxyAddr      string `json:"proxy_addr"`
+	KeyServerAddr  string `json:"keyserver_addr"`
+	HTTPServerAddr string `json:"httpserver_addr"`
+}
+
+type CertificatesConfig struct {
+	Directory           string `json:"directory"`
+	WebCertFile         string `json:"web_cert_file"`
+	WebKeyFile          string `json:"web_key_file"`
+	WebEncryptedKeyFile string `json:"web_encrypted_key_file"`
+	ProxyCertFile       string `json:"proxy_cert_file"`
+	ProxyKeyFile        string `json:"proxy_key_file"`
+	CACertFile          string `json:"ca_cert_file"`
+	CAKeyFile           string `json:"ca_key_file"`
+	KeyServerCertFile   string `json:"keyserver_cert_file"`
+	KeyServerKeyFile    string `json:"keyserver_key_file"`
 }
 
 func LoadConfig(path string) (*Config, error) {

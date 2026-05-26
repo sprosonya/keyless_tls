@@ -11,13 +11,11 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 )
 
 func GenerateCerts(cfg *config.Config) error {
-	dir := filepath.Dir(cfg.Proxy.CACertFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Certificates.Directory, 0755); err != nil {
 		return err
 	}
 
@@ -41,8 +39,8 @@ func GenerateCerts(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	saveCert(cfg.Proxy.CACertFile, caDER)
-	saveECKey(cfg.Proxy.CACertFile[:len(cfg.Proxy.CACertFile)-4]+".key", caKey)
+	saveCert(cfg.Certificates.CACertFile, caDER)
+	savePrivateKey(cfg.Certificates.CAKeyFile, caKey)
 
 	// keyserver cert
 	ksKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -65,8 +63,8 @@ func GenerateCerts(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	saveCert(cfg.KeyServer.ServerCertFile, ksDER)
-	saveECKey(cfg.KeyServer.ServerKeyFile, ksKey)
+	saveCert(cfg.Certificates.KeyServerCertFile, ksDER)
+	savePrivateKey(cfg.Certificates.KeyServerKeyFile, ksKey)
 
 	// proxy cert
 	pxKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -87,8 +85,8 @@ func GenerateCerts(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	saveCert(cfg.Proxy.MTLSCertFile, pxDER)
-	saveECKey(cfg.Proxy.MTLSKeyFile, pxKey)
+	saveCert(cfg.Certificates.ProxyCertFile, pxDER)
+	savePrivateKey(cfg.Certificates.ProxyKeyFile, pxKey)
 
 	// web server cert
 	webKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -111,8 +109,8 @@ func GenerateCerts(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	saveCert(cfg.Proxy.WebCertFile, webDER)
-	saveECKey(cfg.KeyServer.WebPrivateKeyFile, webKey)
+	saveCert(cfg.Certificates.WebCertFile, webDER)
+	savePrivateKey(cfg.Certificates.WebKeyFile, webKey)
 
 	return nil
 }
@@ -123,9 +121,15 @@ func saveCert(path string, der []byte) {
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
-func saveECKey(path string, key *ecdsa.PrivateKey) {
-	keyOut, _ := os.Create(path)
+func savePrivateKey(path string, key *ecdsa.PrivateKey) error {
+	keyOut, err := os.Create(path)
+	if err != nil {
+		return err
+	}
 	defer keyOut.Close()
-	b, _ := x509.MarshalECPrivateKey(key)
-	pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: b})
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return err
+	}
+	return pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }

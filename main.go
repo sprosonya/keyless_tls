@@ -44,20 +44,20 @@ func main() {
 		return
 
 	case "proxy":
-		if !filesExist(cfg.Proxy.WebCertFile, cfg.Proxy.MTLSCertFile,
-			cfg.Proxy.MTLSKeyFile, cfg.Proxy.CACertFile) {
+		if !filesExist(cfg.Certificates.WebCertFile, cfg.Certificates.ProxyCertFile,
+			cfg.Certificates.ProxyKeyFile, cfg.Certificates.CACertFile) {
 			log.Println("Warning: some certificate files not found")
 		}
 		go func() {
-			log.Printf("Proxy on %s", cfg.Proxy.ListenAddr)
+			log.Printf("Proxy on %s", cfg.Servers.ProxyAddr)
 			if err := proxy.StartProxy(*cfg); err != nil {
 				log.Fatalf("proxy error: %v", err)
 			}
 		}()
 
 	case "keyserver":
-		if !filesExist(cfg.KeyServer.WebPrivateKeyFile, cfg.KeyServer.ServerCertFile,
-			cfg.KeyServer.ServerKeyFile, cfg.KeyServer.CACertFile) {
+		if !filesExist(cfg.Certificates.WebEncryptedKeyFile, cfg.Certificates.KeyServerCertFile,
+			cfg.Certificates.KeyServerKeyFile, cfg.Certificates.CACertFile) {
 			log.Println("Warning: some certificate files not found")
 		}
 		pass := *password
@@ -66,7 +66,7 @@ func main() {
 			fmt.Scanln(&pass)
 		}
 		go func() {
-			log.Printf("Keyserver on %s", cfg.KeyServer.ListenAddr)
+			log.Printf("Keyserver on %s", cfg.Servers.KeyServerAddr)
 			if err := keyserver.StartKeyServer(*cfg, pass); err != nil {
 				log.Fatalf("keyserver error: %v", err)
 			}
@@ -74,14 +74,14 @@ func main() {
 
 	case "httpserver":
 		go func() {
-			log.Printf("HTTP server on %s", cfg.HTTPServer.ListenAddr)
-			if err := httpserver.StartHTTPServer(cfg.HTTPServer.ListenAddr); err != nil {
+			log.Printf("HTTP server on %s", cfg.Servers.HTTPServerAddr)
+			if err := httpserver.StartHTTPServer(cfg.Servers.HTTPServerAddr); err != nil {
 				log.Fatalf("httpserver error: %v", err)
 			}
 		}()
 
 	default:
-		log.Fatalf("unknown mode %q (use -mode proxy|keyserver|httpserver|encrypt)", *mode)
+		log.Fatalf("unknown mode %q", *mode)
 	}
 
 	quit := make(chan os.Signal, 1)

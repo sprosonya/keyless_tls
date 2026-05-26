@@ -20,13 +20,13 @@ func StartKeyServer(cfg config.Config, password string) error {
 	//файл json с полями 1) вектор инициализации nonce 2) ключ
 	//AES-GCM
 
-	webKey, err := util.LoadEncryptedPrivateKey(cfg.KeyServer.WebPrivateKeyFile, password)
+	webKey, err := util.LoadEncryptedPrivateKey(cfg.Certificates.WebEncryptedKeyFile, password)
 	if err != nil {
 		return fmt.Errorf("failed to load private key: %w", err)
 	}
 
 	// загрузка сертификата CA
-	caPEM, err := os.ReadFile(cfg.KeyServer.CACertFile)
+	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func StartKeyServer(cfg config.Config, password string) error {
 	caPool.AppendCertsFromPEM(caPEM)
 
 	//загрузка пары сертификат/ключ для хранилища для mTLS
-	serverCert, err := tls.LoadX509KeyPair(cfg.KeyServer.ServerCertFile, cfg.KeyServer.ServerKeyFile)
+	serverCert, err := tls.LoadX509KeyPair(cfg.Certificates.KeyServerCertFile, cfg.Certificates.KeyServerKeyFile)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func StartKeyServer(cfg config.Config, password string) error {
 	})
 
 	server := &http.Server{
-		Addr:      cfg.KeyServer.ListenAddr,
+		Addr:      cfg.Servers.KeyServerAddr,
 		TLSConfig: tlsCfg,
 		Handler:   mux,
 	}

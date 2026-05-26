@@ -32,7 +32,6 @@ func EncryptPrivateKey(keyPath, password, outPath string) error {
 	}
 
 	// фиксированная соль
-	//
 	salt := sha256.Sum256([]byte("keyless-tls"))
 
 	// KDF: scrypt
@@ -115,5 +114,11 @@ func LoadEncryptedPrivateKey(path, password string) (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
 
-	return x509.ParseECPrivateKey(plaintext)
+	if parsed, err := x509.ParsePKCS8PrivateKey(plaintext); err == nil {
+		if ecKey, ok := parsed.(*ecdsa.PrivateKey); ok {
+			return ecKey, nil
+		}
+		return nil, fmt.Errorf("decrypted key is not ECDSA")
+	}
+	return nil, fmt.Errorf("unsupported key")
 }

@@ -58,7 +58,7 @@ func (rs *RemoteSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([
 
 func StartProxy(cfg config.Config) error {
 	// загрузка сертификата бекенда
-	webCertPEM, err := os.ReadFile(cfg.Proxy.WebCertFile)
+	webCertPEM, err := os.ReadFile(cfg.Certificates.WebCertFile)
 	if err != nil {
 		return err
 	}
@@ -71,12 +71,12 @@ func StartProxy(cfg config.Config) error {
 
 	// настройка mTLS
 	//загрузка пары ключей для прокси для mTLS
-	clientCert, err := tls.LoadX509KeyPair(cfg.Proxy.MTLSCertFile, cfg.Proxy.MTLSKeyFile)
+	clientCert, err := tls.LoadX509KeyPair(cfg.Certificates.ProxyCertFile, cfg.Certificates.ProxyKeyFile)
 	if err != nil {
 		return err
 	}
 	//загрузка CA cert
-	caPEM, err := os.ReadFile(cfg.Proxy.CACertFile)
+	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func StartProxy(cfg config.Config) error {
 	signer := &RemoteSigner{
 		publicKey: pubKey,
 		client:    httpClient,
-		signURL:   fmt.Sprintf("https://%s/sign", cfg.Proxy.KeyServerAddr),
+		signURL:   fmt.Sprintf("https://%s/sign", cfg.Servers.KeyServerAddr),
 	}
 
 	//сертификат, в котором вместо приватного ключа реализация интерфейса
@@ -111,7 +111,7 @@ func StartProxy(cfg config.Config) error {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	backendURL, _ := url.Parse("http://" + cfg.Proxy.BackendAddr)
+	backendURL, _ := url.Parse("http://" + cfg.Servers.HTTPServerAddr)
 	proxy := httputil.NewSingleHostReverseProxy(backendURL)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func StartProxy(cfg config.Config) error {
 	})
 
 	server := &http.Server{
-		Addr:      cfg.Proxy.ListenAddr,
+		Addr:      cfg.Servers.ProxyAddr,
 		TLSConfig: tlsCfg,
 		Handler:   handler,
 	}
