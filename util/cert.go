@@ -47,6 +47,10 @@ func GenerateCerts(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	ip, _, err := net.SplitHostPort(cfg.Servers.KeyServerAddr)
+	if err != nil {
+		return err
+	}
 	ksTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
 		Subject: pkix.Name{
@@ -56,7 +60,7 @@ func GenerateCerts(cfg *config.Config) error {
 		NotAfter:    time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses: []net.IP{net.ParseIP(ip)},
 		DNSNames:    []string{"localhost"},
 	}
 	ksDER, err := x509.CreateCertificate(rand.Reader, ksTemplate, caTemplate, &ksKey.PublicKey, caKey)
@@ -67,6 +71,10 @@ func GenerateCerts(cfg *config.Config) error {
 	savePrivateKey(cfg.Certificates.KeyServerKeyFile, ksKey)
 
 	// proxy cert
+	ip, _, err = net.SplitHostPort(cfg.Servers.ProxyAddr)
+	if err != nil {
+		return err
+	}
 	pxKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -80,6 +88,7 @@ func GenerateCerts(cfg *config.Config) error {
 		NotAfter:    time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		IPAddresses: []net.IP{net.ParseIP(ip)},
 	}
 	pxDER, err := x509.CreateCertificate(rand.Reader, pxTemplate, caTemplate, &pxKey.PublicKey, caKey)
 	if err != nil {
@@ -89,6 +98,10 @@ func GenerateCerts(cfg *config.Config) error {
 	savePrivateKey(cfg.Certificates.ProxyKeyFile, pxKey)
 
 	// web server cert
+	ip, _, err = net.SplitHostPort(cfg.Servers.HTTPServerAddr)
+	if err != nil {
+		return err
+	}
 	webKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -102,7 +115,7 @@ func GenerateCerts(cfg *config.Config) error {
 		NotAfter:    time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses: []net.IP{net.ParseIP(ip)},
 		DNSNames:    []string{"localhost"},
 	}
 	webDER, err := x509.CreateCertificate(rand.Reader, webTemplate, caTemplate, &webKey.PublicKey, caKey)
