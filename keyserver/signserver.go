@@ -14,34 +14,29 @@ import (
 	"os"
 )
 
-func StartKeyServer(cfg config.Config, password string) error {
-	// загрузка приватного ключа
-	//KDF от пароля
-	//файл json с полями 1) вектор инициализации nonce 2) ключ
-	//AES-GCM
-
+func StartSignServer(cfg config.Config, password string) error {
 	webKey, err := util.LoadEncryptedPrivateKey(cfg.Certificates.WebEncryptedKeyFile, password)
 	if err != nil {
-		return fmt.Errorf("failed to load private key: %w", err)
+		return fmt.Errorf("loading encrypted private key: %w", err)
 	}
 
-	// загрузка сертификата CA
 	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading CA cert: %w", err)
 	}
 	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caPEM)
-
-	//загрузка пары сертификат/ключ для хранилища для mTLS
-	serverCert, err := tls.LoadX509KeyPair(cfg.Certificates.KeyServerCertFile, cfg.Certificates.KeyServerKeyFile)
-	if err != nil {
-		return err
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("failed to parse CA certificate")
 	}
-	//экспорт сессионных ключей для расшифровки
-	keyLogFile, err := os.OpenFile("keyserver_tls_keys.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+
+	serverCert, err := tls.LoadX509KeyPair(cfg.Certificates.SignServerCertFile, cfg.Certificates.SignServerKeyFile)
 	if err != nil {
-		return fmt.Errorf("cannot open keylog file: %w", err)
+		return fmt.Errorf("loading signserver certificate: %w", err)
+	}
+
+	keyLogFile, err := os.OpenFile("signserver_tls_keys.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("opening keylog file: %w", err)
 	}
 	defer keyLogFile.Close()
 
@@ -67,18 +62,19 @@ func StartKeyServer(cfg config.Config, password string) error {
 			return
 		}
 		log.Println("Sign request: digest", req.Digest, "ip", r.Host)
-		//читаем хэш
+
 		digest, err := base64.RawStdEncoding.DecodeString(req.Digest)
 		if err != nil {
 			http.Error(w, "bad digest", http.StatusBadRequest)
 			return
 		}
-		//подписываем приватным ключом хэш
+
 		sig, err := webKey.Sign(rand.Reader, digest, nil)
 		if err != nil {
 			http.Error(w, "signing failed", http.StatusInternalServerError)
 			return
 		}
+
 		resp := struct {
 			Signature string `json:"signature"`
 		}{
@@ -90,9 +86,10 @@ func StartKeyServer(cfg config.Config, password string) error {
 	})
 
 	server := &http.Server{
-		Addr:      cfg.Servers.KeyServerAddr,
+		Addr:      cfg.Servers.SignServerAddr,
 		TLSConfig: tlsCfg,
 		Handler:   mux,
 	}
-	return server.ListenAndServeTLS("", "")
+
+	return fmt.Errorf("starting signserver: %w", server.ListenAndServeTLS("", ""))
 }

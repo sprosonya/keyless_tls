@@ -11,15 +11,17 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"keyless/config"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"time"
+
+	"keyless/config"
 )
 
-// реализация Signer
 type RemoteSigner struct {
 	publicKey *ecdsa.PublicKey
 	client    *http.Client
@@ -30,99 +32,147 @@ func (rs *RemoteSigner) Public() crypto.PublicKey {
 	return rs.publicKey
 }
 
+type SignRequest struct {
+	Digest string `json:"digest"`
+}
+type SignResponse struct {
+	Signature string `json:"signature"`
+}
+
 func (rs *RemoteSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([]byte, error) {
-	reqBody := struct {
-		Digest string `json:"digest"`
-	}{
+	req := SignRequest{
 		Digest: base64.RawStdEncoding.EncodeToString(digest),
 	}
-	data, _ := json.Marshal(reqBody)
-	log.Println("Send sign request. Digest:", reqBody.Digest)
+	data, _ := json.Marshal(req)
+	log.Println("Send sign request. Digest:", req.Digest)
+
 	resp, err := rs.client.Post(rs.signURL, "application/json", bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("posting sign request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keyserver error: %s", resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("signserver error: %s, body: %s", resp.Status, string(body))
 	}
-	var reply struct {
-		Signature string `json:"signature"`
-	}
+
+	reply := SignResponse{}
 	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding sign response: %w", err)
 	}
-	return base64.RawStdEncoding.DecodeString(reply.Signature)
+	_, err = io.Copy(io.Discard, resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("draining response body: %w", err)
+	}
+
+	sig, err := base64.RawStdEncoding.DecodeString(reply.Signature)
+	if err != nil {
+		return nil, fmt.Errorf("decoding signature: %w", err)
+	}
+	return sig, nil
 }
 
 func StartProxy(cfg config.Config) error {
-	// загрузка сертификата бекенда
 	webCertPEM, err := os.ReadFile(cfg.Certificates.WebCertFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading web cert file: %w", err)
 	}
-	block, _ := pem.Decode(webCertPEM)
-	webCert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return err
-	}
-	pubKey, _ := webCert.PublicKey.(*ecdsa.PublicKey)
 
-	// настройка mTLS
-	//загрузка пары ключей для прокси для mTLS
+	var certDER [][]byte
+	var leaf *x509.Certificate
+	rest := webCertPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		certDER = append(certDER, block.Bytes)
+		if leaf == nil {
+			leaf, err = x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				return fmt.Errorf("parsing leaf certificate: %w", err)
+			}
+		}
+	}
+	if len(certDER) == 0 {
+		return fmt.Errorf("no certificates found in %s", cfg.Certificates.WebCertFile)
+	}
+	pubKey, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("web certificate public key is not ECDSA")
+	}
+
 	clientCert, err := tls.LoadX509KeyPair(cfg.Certificates.ProxyCertFile, cfg.Certificates.ProxyKeyFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading mTLS client cert: %w", err)
 	}
-	//загрузка CA cert
+
 	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading CA cert: %w", err)
 	}
 	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caPEM)
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("failed to parse CA certificate")
+	}
 
-	//создаем конфиг для подключения по mTLS с хранилищем
 	tlsClientCfg := &tls.Config{
 		Certificates: []tls.Certificate{clientCert},
 		RootCAs:      caPool,
 		MinVersion:   tls.VersionTLS13,
 	}
-	tr := &http.Transport{TLSClientConfig: tlsClientCfg}
-	httpClient := &http.Client{Transport: tr}
+
+	transport := &http.Transport{
+		TLSClientConfig:     tlsClientCfg,
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	httpClient := &http.Client{Transport: transport}
 
 	signer := &RemoteSigner{
 		publicKey: pubKey,
 		client:    httpClient,
-		signURL:   fmt.Sprintf("https://%s/sign", cfg.Servers.KeyServerAddr),
+		signURL:   fmt.Sprintf("https://%s/sign", cfg.Servers.SignServerAddr),
 	}
 
-	//сертификат, в котором вместо приватного ключа реализация интерфейса
 	tlsCert := tls.Certificate{
-		Certificate: [][]byte{block.Bytes},
+		Certificate: certDER,
 		PrivateKey:  signer,
-		Leaf:        webCert,
+		Leaf:        leaf,
 	}
 
-	//конфиг TLS для входящих соединений
-	tlsCfg := &tls.Config{
+	incomingTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	backendURL, _ := url.Parse("http://" + cfg.Servers.HTTPServerAddr)
+	backendURL, err := url.Parse("http://" + cfg.Servers.HTTPServerAddr)
+	if err != nil {
+		return fmt.Errorf("invalid backend URL: %w", err)
+	}
 	proxy := httputil.NewSingleHostReverseProxy(backendURL)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Request from %s: %s", r.RemoteAddr, r.URL.String())
+	loggingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		log.Printf("Incoming request from %s: %s %s", ip, r.Method, r.URL.String())
 		proxy.ServeHTTP(w, r)
 	})
 
 	server := &http.Server{
 		Addr:      cfg.Servers.ProxyAddr,
-		TLSConfig: tlsCfg,
-		Handler:   handler,
+		TLSConfig: incomingTLSConfig,
+		Handler:   loggingHandler,
 	}
+
+	log.Printf("Starting TLS proxy on %s", cfg.Servers.ProxyAddr)
 	return server.ListenAndServeTLS("", "")
 }

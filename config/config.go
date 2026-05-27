@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -12,7 +13,7 @@ type Config struct {
 
 type ServersConfig struct {
 	ProxyAddr      string `json:"proxy_addr"`
-	KeyServerAddr  string `json:"keyserver_addr"`
+	SignServerAddr string `json:"signserver_addr"`
 	HTTPServerAddr string `json:"httpserver_addr"`
 }
 
@@ -25,18 +26,18 @@ type CertificatesConfig struct {
 	ProxyKeyFile        string `json:"proxy_key_file"`
 	CACertFile          string `json:"ca_cert_file"`
 	CAKeyFile           string `json:"ca_key_file"`
-	KeyServerCertFile   string `json:"keyserver_cert_file"`
-	KeyServerKeyFile    string `json:"keyserver_key_file"`
+	SignServerCertFile  string `json:"signserver_cert_file"`
+	SignServerKeyFile   string `json:"signserver_key_file"`
 }
 
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("config: reading file: %w", err)
 	}
 	cfg := &Config{}
 	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("config: parsing json: %w", err)
 	}
 	return cfg, nil
 }

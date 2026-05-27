@@ -17,9 +17,8 @@ import (
 func main() {
 	configPath := flag.String("config", "./config/config.json", "path to config file")
 	mode := flag.String("mode", "", "service mode: proxy, keyserver, httpserver, encrypt, gen-certs")
-	keyFile := flag.String("key", "./certs/web.key", "path to PEM private key (for encrypt mode)")
-	outFile := flag.String("out", "./certs/encrypted_key.json", "output encrypted JSON file (for encrypt mode)")
 	password := flag.String("password", "", "password for encryption or decryption key file")
+	webCertKey := flag.Bool("skip-web-gen", false, "enable web certificate")
 	flag.Parse()
 
 	cfg, err := config.LoadConfig(*configPath)
@@ -30,15 +29,19 @@ func main() {
 	switch *mode {
 	case "encrypt":
 		pass := *password
-		if err := util.EncryptPrivateKey(*keyFile, pass, *outFile); err != nil {
-			log.Fatalf("encryption failed: %v", err)
+		if pass == "" {
+			fmt.Print("Enter password for private key: ")
+			fmt.Scanln(&pass)
+		}
+		if err := util.EncryptPrivateKey(cfg.Certificates.WebKeyFile, pass, cfg.Certificates.WebEncryptedKeyFile); err != nil {
+			log.Fatalf("encryption error: %v", err)
 		}
 		log.Println("encryption success")
 		return
 
-	case "genCerts":
-		if err := util.GenerateCerts(cfg); err != nil {
-			log.Fatalf("cert generation failed: %v", err)
+	case "gen-certs":
+		if err := util.GenerateCerts(cfg, *webCertKey); err != nil {
+			log.Fatalf("cert generation error: %v", err)
 		}
 		log.Println("Certificates generated successfully")
 		return
@@ -56,8 +59,8 @@ func main() {
 		}()
 
 	case "keyserver":
-		if !filesExist(cfg.Certificates.WebEncryptedKeyFile, cfg.Certificates.KeyServerCertFile,
-			cfg.Certificates.KeyServerKeyFile, cfg.Certificates.CACertFile) {
+		if !filesExist(cfg.Certificates.WebEncryptedKeyFile, cfg.Certificates.SignServerCertFile,
+			cfg.Certificates.SignServerKeyFile, cfg.Certificates.CACertFile) {
 			log.Println("Warning: some certificate files not found")
 		}
 		pass := *password
@@ -66,9 +69,9 @@ func main() {
 			fmt.Scanln(&pass)
 		}
 		go func() {
-			log.Printf("Keyserver on %s", cfg.Servers.KeyServerAddr)
-			if err := keyserver.StartKeyServer(*cfg, pass); err != nil {
-				log.Fatalf("keyserver error: %v", err)
+			log.Printf("Signserver on %s", cfg.Servers.SignServerAddr)
+			if err := keyserver.StartSignServer(*cfg, pass); err != nil {
+				log.Fatalf("signserver error: %v", err)
 			}
 		}()
 

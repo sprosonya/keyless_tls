@@ -31,22 +31,18 @@ func EncryptPrivateKey(keyPath, password, outPath string) error {
 		return fmt.Errorf("no PEM block found")
 	}
 
-	// фиксированная соль
 	salt := sha256.Sum256([]byte("keyless-tls"))
 
-	// KDF: scrypt
 	key, err := scrypt.Key([]byte(password), salt[:], 1<<15, 8, 1, 32)
 	if err != nil {
 		return fmt.Errorf("scrypt: %w", err)
 	}
 
-	// случайный nonce
 	nonce := make([]byte, 12)
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("rand: %w", err)
 	}
 
-	// AES-GCM
 	aesBlock, err := aes.NewCipher(key)
 	if err != nil {
 		return fmt.Errorf("aes: %w", err)
@@ -57,7 +53,6 @@ func EncryptPrivateKey(keyPath, password, outPath string) error {
 	}
 	ciphertext := aead.Seal(nil, nonce, block.Bytes, nil)
 
-	// запись в JSON
 	ek := EncryptedKeyData{
 		Nonce: base64.StdEncoding.EncodeToString(nonce),
 		Key:   base64.StdEncoding.EncodeToString(ciphertext),
@@ -91,10 +86,8 @@ func LoadEncryptedPrivateKey(path, password string) (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("invalid cipher: %w", err)
 	}
 
-	// фиксированная соль
 	salt := sha256.Sum256([]byte("keyless-tls"))
 
-	// KDF
 	key, err := scrypt.Key([]byte(password), salt[:], 1<<15, 8, 1, 32)
 	if err != nil {
 		return nil, fmt.Errorf("scrypt: %w", err)

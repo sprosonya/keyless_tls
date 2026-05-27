@@ -1,7 +1,7 @@
 {
   "servers": {
     "proxy_addr": "127.0.0.1:443",
-    "keyserver_addr": "127.0.0.1:8443",
+    "signserver_addr": "127.0.0.1:8443",
     "httpserver_addr": "127.0.0.1:8080"
   },
   "certificates": {
@@ -13,7 +13,7 @@
     "proxy_key_file": "certs/proxy.key",
     "ca_cert_file": "certs/ca.crt",
     "ca_key_file": "certs/ca.key",
-    "keyserver_cert_file": "certs/keyserver.crt",
-    "keyserver_key_file": "certs/keyserver.key"
+    "signserver_cert_file": "certs/signserver.crt",
+    "signserver_key_file": "certs/signserver.key"
   }
 }
