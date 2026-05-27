@@ -1,4 +1,4 @@
-package keyserver
+package signserver
 
 import (
 	"crypto/rand"
