@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"keyless/config"
 	"keyless/httpserver"
-	"keyless/keyserver"
 	"keyless/proxy"
+	"keyless/signserver"
 	"keyless/util"
 	"log"
 	"os"
@@ -70,7 +70,7 @@ func main() {
 		}
 		go func() {
 			log.Printf("Signserver on %s", cfg.Servers.SignServerAddr)
-			if err := keyserver.StartSignServer(*cfg, pass); err != nil {
+			if err := signserver.StartSignServer(*cfg, pass); err != nil {
 				log.Fatalf("signserver error: %v", err)
 			}
 		}()
