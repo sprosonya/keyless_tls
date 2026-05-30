@@ -64,6 +64,9 @@ func EncryptPrivateKey(keyPath, password, outPath string) error {
 	if err := os.WriteFile(outPath, jsonData, 0600); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
+	if err := os.Remove(keyPath); err != nil {
+		return fmt.Errorf("failed to remove original key file: %w", err)
+	}
 	return nil
 }
 
