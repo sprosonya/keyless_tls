@@ -7,20 +7,26 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"keyless/config"
-	"keyless/util"
+	"keyless/encrypt"
 	"log"
 	"net/http"
 	"os"
 )
 
-func StartSignServer(cfg config.Config, password string) error {
-	webKey, err := util.LoadEncryptedPrivateKey(cfg.Certificates.WebEncryptedKeyFile, password)
+type SignRequest struct {
+	Digest string `json:"digest"`
+}
+type SignResponse struct {
+	Signature string `json:"signature"`
+}
+
+func StartSignServer(addr, webKeyPath, caCertPath, signCertPath, signKeyPath, password string) error {
+	webKey, err := encrypt.LoadEncryptedPrivateKey(webKeyPath, password)
 	if err != nil {
 		return fmt.Errorf("loading encrypted private key: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
+	caPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return fmt.Errorf("reading CA cert: %w", err)
 	}
@@ -29,12 +35,12 @@ func StartSignServer(cfg config.Config, password string) error {
 		return fmt.Errorf("failed to parse CA certificate")
 	}
 
-	serverCert, err := tls.LoadX509KeyPair(cfg.Certificates.SignServerCertFile, cfg.Certificates.SignServerKeyFile)
+	serverCert, err := tls.LoadX509KeyPair(signCertPath, signKeyPath)
 	if err != nil {
 		return fmt.Errorf("loading signserver certificate: %w", err)
 	}
 
-	keyLogFile, err := os.OpenFile("signserver_tls_keys.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyLogFile, err := os.OpenFile("signserver_mtls.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("opening keylog file: %w", err)
 	}
@@ -54,9 +60,7 @@ func StartSignServer(cfg config.Config, password string) error {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
 		}
-		var req struct {
-			Digest string `json:"digest"`
-		}
+		var req SignRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -75,21 +79,21 @@ func StartSignServer(cfg config.Config, password string) error {
 			return
 		}
 
-		resp := struct {
-			Signature string `json:"signature"`
-		}{
+		resp := SignResponse{
 			Signature: base64.RawStdEncoding.EncodeToString(sig),
 		}
+
 		log.Println("Sign response: sign", resp.Signature)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	})
 
 	server := &http.Server{
-		Addr:      cfg.Servers.SignServerAddr,
+		Addr:      addr,
 		TLSConfig: tlsCfg,
 		Handler:   mux,
 	}
 
+	log.Printf("Starting signserver on %s", addr)
 	return fmt.Errorf("starting signserver: %w", server.ListenAndServeTLS("", ""))
 }

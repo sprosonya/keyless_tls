@@ -18,8 +18,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-
-	"keyless/config"
 )
 
 type RemoteSigner struct {
@@ -73,8 +71,9 @@ func (rs *RemoteSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([
 	return sig, nil
 }
 
-func StartProxy(cfg config.Config) error {
-	webCertPEM, err := os.ReadFile(cfg.Certificates.WebCertFile)
+// StartProxy запускает TLS-прокси. Все настройки передаются через параметры.
+func StartProxy(proxyAddr, backendAddr, signServerAddr, webCertFile, proxyCertFile, proxyKeyFile, caCertFile string) error {
+	webCertPEM, err := os.ReadFile(webCertFile)
 	if err != nil {
 		return fmt.Errorf("reading web cert file: %w", err)
 	}
@@ -100,19 +99,19 @@ func StartProxy(cfg config.Config) error {
 		}
 	}
 	if len(certDER) == 0 {
-		return fmt.Errorf("no certificates found in %s", cfg.Certificates.WebCertFile)
+		return fmt.Errorf("no certificates found in %s", webCertFile)
 	}
 	pubKey, ok := leaf.PublicKey.(*ecdsa.PublicKey)
 	if !ok {
 		return fmt.Errorf("web certificate public key is not ECDSA")
 	}
 
-	clientCert, err := tls.LoadX509KeyPair(cfg.Certificates.ProxyCertFile, cfg.Certificates.ProxyKeyFile)
+	clientCert, err := tls.LoadX509KeyPair(proxyCertFile, proxyKeyFile)
 	if err != nil {
 		return fmt.Errorf("loading mTLS client cert: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(cfg.Certificates.CACertFile)
+	caPEM, err := os.ReadFile(caCertFile)
 	if err != nil {
 		return fmt.Errorf("reading CA cert: %w", err)
 	}
@@ -121,10 +120,17 @@ func StartProxy(cfg config.Config) error {
 		return fmt.Errorf("failed to parse CA certificate")
 	}
 
+	keyLogFile, err := os.OpenFile("proxy_mtls.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("opening keylog file: %w", err)
+	}
+	defer keyLogFile.Close()
+
 	tlsClientCfg := &tls.Config{
 		Certificates: []tls.Certificate{clientCert},
 		RootCAs:      caPool,
 		MinVersion:   tls.VersionTLS13,
+		KeyLogWriter: keyLogFile,
 	}
 
 	transport := &http.Transport{
@@ -138,7 +144,7 @@ func StartProxy(cfg config.Config) error {
 	signer := &RemoteSigner{
 		publicKey: pubKey,
 		client:    httpClient,
-		signURL:   fmt.Sprintf("https://%s/sign", cfg.Servers.SignServerAddr),
+		signURL:   fmt.Sprintf("https://%s/sign", signServerAddr),
 	}
 
 	tlsCert := tls.Certificate{
@@ -147,12 +153,19 @@ func StartProxy(cfg config.Config) error {
 		Leaf:        leaf,
 	}
 
+	incomingKeyLogFile, err := os.OpenFile("proxy_incoming.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("opening incoming keylog file: %w", err)
+	}
+	defer incomingKeyLogFile.Close()
+
 	incomingTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
 		MinVersion:   tls.VersionTLS13,
+		KeyLogWriter: incomingKeyLogFile,
 	}
 
-	backendURL, err := url.Parse("http://" + cfg.Servers.HTTPServerAddr)
+	backendURL, err := url.Parse("http://" + backendAddr)
 	if err != nil {
 		return fmt.Errorf("invalid backend URL: %w", err)
 	}
@@ -168,11 +181,11 @@ func StartProxy(cfg config.Config) error {
 	})
 
 	server := &http.Server{
-		Addr:      cfg.Servers.ProxyAddr,
+		Addr:      proxyAddr,
 		TLSConfig: incomingTLSConfig,
 		Handler:   loggingHandler,
 	}
 
-	log.Printf("Starting TLS proxy on %s", cfg.Servers.ProxyAddr)
+	log.Printf("Starting TLS proxy on %s", proxyAddr)
 	return server.ListenAndServeTLS("", "")
 }
