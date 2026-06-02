@@ -71,7 +71,6 @@ func (rs *RemoteSigner) Sign(_ io.Reader, digest []byte, _ crypto.SignerOpts) ([
 	return sig, nil
 }
 
-// StartProxy запускает TLS-прокси. Все настройки передаются через параметры.
 func StartProxy(proxyAddr, backendAddr, signServerAddr, webCertFile, proxyCertFile, proxyKeyFile, caCertFile string) error {
 	webCertPEM, err := os.ReadFile(webCertFile)
 	if err != nil {
